@@ -20,6 +20,7 @@ import { WorktreeGit } from "@opencode/core/worktree/git"
 import { Location } from "@opencode/core/location"
 import { Global } from "@opencode/util/global"
 import { FSUtil } from "@opencode/util/fs-util"
+import { AppProcess } from "@opencode/util/process"
 import { Config } from "@opencode/core/config"
 import { ConfigWorktreePlugin } from "@opencode/core/config/plugin/worktree"
 import { ConfigNormalize } from "@opencode/core/config/normalize"
@@ -302,6 +303,37 @@ describe("Worktree", () => {
         created.directory,
       ])
       yield* worktree.remove({ directory: created.directory, force: true })
+    }),
+  )
+
+  it.live("does not register a worktree when the project setup script fails", () =>
+    Effect.gen(function* () {
+      const input = yield* setup()
+      const worktree = yield* fixtureWorktree()
+      const temp = yield* Effect.promise(() => fs.realpath(path.dirname(input.root.path)))
+      const parent = abs(path.join(temp, path.basename(input.root.path) + "-worktree-start-failed"))
+      const target = abs(path.join(parent, "worktree"))
+      yield* Effect.addFinalizer(() => Effect.promise(() => fs.rm(parent, { recursive: true, force: true })))
+      yield* input.db
+        .update(ProjectTable)
+        .set({ commands: { start: "bun -e \"process.exit(9)\"" } })
+        .where(eq(ProjectTable.id, input.projectID))
+        .run()
+        .pipe(Effect.orDie)
+
+      const error = yield* worktree.create({ directory: parent, name: "worktree" }).pipe(Effect.flip)
+      expect(error).toBeInstanceOf(AppProcess.AppProcessError)
+      expect(yield* stored(input.projectID)).toEqual([{ directory: input.sourceDirectory, strategy: null }])
+
+      yield* input.db
+        .update(ProjectTable)
+        .set({ commands: {} })
+        .where(eq(ProjectTable.id, input.projectID))
+        .run()
+        .pipe(Effect.orDie)
+      const retry = yield* worktree.create({ directory: parent, name: "worktree" })
+      expect(retry.directory).toBe(target)
+      yield* worktree.remove({ directory: retry.directory, force: true })
     }),
   )
 

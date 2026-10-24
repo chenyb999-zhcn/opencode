@@ -1,6 +1,6 @@
 export * as Worktree from "./worktree.js"
 
-import { Context, Effect, Layer, Schema } from "effect"
+import { Context, Effect, Exit, Layer, Schema } from "effect"
 import { and, asc, desc, eq, isNull, sql } from "drizzle-orm"
 import path from "path"
 import { AbsolutePath } from "./schema.js"
@@ -236,7 +236,7 @@ const layer = Layer.effect(
       const command = row.commands?.start?.trim()
       if (command) {
         const windows = process.platform === "win32"
-        yield* processService
+        const started = yield* processService
           .run(
             ChildProcess.make(windows ? command : "bash", windows ? [] : ["-lc", command], {
               cwd: result.directory,
@@ -249,7 +249,28 @@ const layer = Layer.effect(
               shell: windows,
             }),
           )
-          .pipe(Effect.flatMap(AppProcess.requireSuccess))
+          .pipe(Effect.flatMap(AppProcess.requireSuccess), Effect.exit)
+        if (Exit.isFailure(started)) {
+          // The worktree exists only because this call created it, so a failed start
+          // command must not leave the directory and its registration behind for a
+          // caller that retries the create and sees an orphan at the same name.
+          yield* selected
+            .remove({ directory: result.directory, force: true })
+            .pipe(
+              Effect.catch((error) =>
+                Effect.logWarning("failed to remove worktree after failed start command", {
+                  directory: result.directory,
+                  strategy: selected.id,
+                  error,
+                }),
+              ),
+            )
+          yield* changed(
+            input.projectID,
+            yield* ops.remove(input.projectID, result.directory),
+          )
+          return yield* Effect.failCause(started.cause)
+        }
       }
       return result
     }, Effect.scoped)
