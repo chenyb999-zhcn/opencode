@@ -37,6 +37,19 @@ const sendFailedTitle = {
   prompt: "prompt.toast.promptSendFailed.title",
 } as const
 
+// `/init` and `/review` are registered by core's command plugin, and the served
+// command list carries plain strings with no locale information. Translate their
+// descriptions here, but only while both the name and the description still match
+// the built-in English defaults, so custom commands and MCP prompts that happen to
+// use these names keep their own descriptions.
+const builtInCommandDescriptions = {
+  init: { key: "command.init.description", default: "guided AGENTS.md setup" },
+  review: {
+    key: "command.review.description",
+    default: "review changes [commit|branch|pr], defaults to uncommitted",
+  },
+} as const
+
 export function createComposerModel(adapter: ComposerAdapter, options?: { queue?: ComposerQueue }): ComposerModel {
   const sdk = useWorkspaceLocation()
   const data = useData()
@@ -223,13 +236,16 @@ export function createComposerModel(adapter: ComposerAdapter, options?: { queue?
   ])
 
   const slashCommands = createMemo(() => [
-    ...(data.location.command.list({ directory: sdk().directory }) ?? []).map((item) => ({
-      id: `custom.${item.name}`,
-      trigger: item.name,
-      title: item.name,
-      description: item.description,
-      type: "custom" as const,
-    })),
+    ...(data.location.command.list({ directory: sdk().directory }) ?? []).map((item) => {
+      const builtIn = builtInCommandDescriptions[item.name as keyof typeof builtInCommandDescriptions]
+      return {
+        id: `custom.${item.name}`,
+        trigger: item.name,
+        title: item.name,
+        description: builtIn?.default === item.description ? language.t(builtIn.key) : item.description,
+        type: "custom" as const,
+      }
+    }),
     ...command.options
       .filter((item) => !item.disabled && !item.id.startsWith("suggested.") && item.slash)
       .map((item) => ({

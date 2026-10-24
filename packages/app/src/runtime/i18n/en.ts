@@ -41,6 +41,9 @@ export const dict = {
 
   "command.palette": "Command palette",
 
+  "command.init.description": "guided AGENTS.md setup",
+  "command.review.description": "review changes [commit|branch|pr], defaults to uncommitted",
+
   "command.session.new": "New session",
   "command.session.previous": "Previous session",
   "command.session.next": "Next session",

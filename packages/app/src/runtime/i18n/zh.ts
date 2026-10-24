@@ -99,6 +99,9 @@ export const dict = {
 
   "command.palette": "命令面板",
 
+  "command.init.description": "引导式 AGENTS.md 初始化",
+  "command.review.description": "审查变更 [commit|branch|pr]，默认审查未提交的更改",
+
   "command.session.new": "新建会话",
   "command.session.import": "导入会话",
 
