@@ -899,6 +899,37 @@ describe("ModelResolver", () => {
     }),
   )
 
+  it.effect("drops provider body encoding when a credential supplies a different baseURL", () =>
+    Effect.gen(function* () {
+      // Provider plugins attach `encoding: "zstd"` as transport policy for the ChatGPT backend.
+      // A managed Console connection replaces the backend URL through credential metadata, and the
+      // gateway may not decode zstd, so the inherited encoding must not ride along to it.
+      const settings = { baseURL: "https://chatgpt.com/backend-api/codex", encoding: "zstd" as const }
+      const overridden = yield* ModelResolver.fromCatalogModel(
+        model("@opencode/ai/providers/openai-compatible", { settings }),
+        Credential.Key.make({
+          type: "key",
+          key: "secret",
+          metadata: { baseURL: "https://console.example/inference/custom/conn_openai" },
+        }),
+      )
+      expect(overridden.route.endpoint.baseURL).toBe("https://console.example/inference/custom/conn_openai")
+      expect(overridden.defaults?.http?.encoding).toBeUndefined()
+
+      const kept = yield* ModelResolver.fromCatalogModel(
+        model("@opencode/ai/providers/openai-compatible", { settings }),
+        Credential.Key.make({ type: "key", key: "secret", metadata: { baseURL: settings.baseURL } }),
+      )
+      expect(kept.defaults?.http?.encoding).toBe("zstd")
+
+      const withoutBaseURL = yield* ModelResolver.fromCatalogModel(
+        model("@opencode/ai/providers/openai-compatible", { settings }),
+        Credential.Key.make({ type: "key", key: "secret", metadata: { accountID: "acct_123" } }),
+      )
+      expect(withoutBaseURL.defaults?.http?.encoding).toBe("zstd")
+    }),
+  )
+
   it.effect("maps legacy OpenAI organization and project settings to headers", () =>
     Effect.gen(function* () {
       const resolved = yield* ModelResolver.fromCatalogModel(

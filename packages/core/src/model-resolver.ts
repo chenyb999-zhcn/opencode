@@ -199,7 +199,7 @@ const resolveCatalogModel = Effect.fn("ModelResolver.resolveCatalogModel")(funct
   dependencies?: Dependencies,
 ) {
   const resolved = prepareRuntimeModel(model)
-  const configured = { ...resolved.settings, ...credential?.metadata }
+  const configured = configuredSettings(resolved.settings, credential?.metadata)
   if (Provider.isAISDK(resolved.package)) {
     const loadAISDK = dependencies?.loadAISDK
     if (!loadAISDK) return yield* unsupported(resolved)
@@ -256,6 +256,19 @@ const resolveCatalogModel = Effect.fn("ModelResolver.resolveCatalogModel")(funct
         : initialization(resolved, "construct", cause),
   })
 })
+
+// Body encoding is transport policy for the backend provider settings describe — the ChatGPT
+// plugins attach `zstd` because the Codex backend requires it. A connection-supplied `baseURL`
+// (e.g. an OpenCode Console gateway) replaces that backend, so the inherited encoding must not
+// ride along to an endpoint that may not decode it.
+function configuredSettings(
+  settings: Readonly<Record<string, unknown>> | undefined,
+  metadata: Readonly<Record<string, unknown>> | undefined,
+) {
+  if (typeof metadata?.baseURL !== "string" || metadata.baseURL === settings?.baseURL)
+    return { ...settings, ...metadata }
+  return Struct.omit({ ...settings, ...metadata }, ["encoding"])
+}
 
 function prepareRuntimeModel(model: RuntimeInfo) {
   if (model.settings?.apiKey !== "") return model
