@@ -1,6 +1,7 @@
 export * as Permission from "./permission.js"
 
 import { makeLocationNode } from "@opencode/util/effect/app-node"
+import path from "path"
 import { Context, Deferred, Effect, Layer, Schema } from "effect"
 import { Permission } from "@opencode/schema/permission"
 import { Bus } from "./bus.js"
@@ -149,8 +150,36 @@ const layer = Layer.effect(
       return merge(agent?.permissions ?? missingAgentPermissions, session.permissions ?? [])
     })
 
+    // Tools report `external_directory`, `read`, and `edit` resources as location-relative paths
+    // while users often spell rules as absolute paths, so path rules also match the
+    // location-resolved absolute form of a relative resource. Non-path actions (shell command text,
+    // agent IDs, URLs, ...) keep verbatim matching: resolving them against the directory would
+    // invent candidates no rule was meant to match.
+    const pathActions = new Set(["external_directory", "read", "edit"])
+    const slash = (value: string) => value.replaceAll("\\", "/")
+    // Slash-rooted locations are POSIX-style even on Windows hosts (tests, WSL paths), and
+    // `path.resolve` would prepend the process drive to them; pick the flavor by the location.
+    const resolver = () => (slash(location.directory).startsWith("/") ? path.posix : path.win32)
+    function forms(action: string, resource: string) {
+      if (!pathActions.has(action)) return [resource]
+      const absolute = slash(resolver().resolve(location.directory, resource))
+      return absolute === slash(resource) ? [resource] : [resource, absolute]
+    }
+
+    // Last-match wins across every form of a resource, matching `evaluate`'s precedence, so an
+    // absolute allow placed after a relative deny still decides the resource.
+    function evaluateForms(action: string, resourceForms: string[], rules: Permission.Ruleset): Permission.Rule {
+      return (
+        rules.findLast(
+          (rule) => Wildcard.match(action, rule.action) && resourceForms.some((form) => Wildcard.match(form, rule.resource)),
+        ) ?? { action, resource: "*", effect: "ask" as const }
+      )
+    }
+
     function denied(input: Pick<Request, "action" | "resources">, rules: Permission.Ruleset) {
-      return input.resources.some((resource) => evaluate(input.action, resource, rules).effect === "deny")
+      return input.resources.some(
+        (resource) => evaluateForms(input.action, forms(input.action, resource), rules).effect === "deny",
+      )
     }
 
     function relevant(input: AssertInput, rules: Permission.Ruleset) {
@@ -161,7 +190,9 @@ const layer = Layer.effect(
       const rules = yield* configured(input.sessionID, input.agent)
       if (denied(input, rules)) return { effect: "deny" as const, rules }
       const all = [...rules, ...(yield* savedRules())]
-      const effects = input.resources.map((resource) => evaluate(input.action, resource, all).effect)
+      const effects = input.resources.map(
+        (resource) => evaluateForms(input.action, forms(input.action, resource), all).effect,
+      )
       const effect: Permission.Effect = effects.includes("ask") ? "ask" : "allow"
       const event = yield* hooks.trigger("permission", "evaluate", {
         sessionID: input.sessionID,

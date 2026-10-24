@@ -156,6 +156,55 @@ describe("Permission", () => {
     expect(Permission.evaluate("external_directory", "C:/Users/x/other/*", rules).effect).toBe("ask")
   })
 
+  it.effect("matches absolute rules against location-relative path resources", () =>
+    Effect.gen(function* () {
+      yield* setup([
+        { action: "edit", resource: "*", effect: "deny" },
+        { action: "edit", resource: "/project/**", effect: "allow" },
+      ])
+      const service = yield* Permission.Service
+      expect(yield* service.ask(assertion({ action: "edit", resources: ["agents/test.md"] }))).toMatchObject({
+        effect: "allow",
+      })
+
+      yield* setRules([
+        { action: "edit", resource: "*", effect: "deny" },
+        { action: "edit", resource: "agents/**", effect: "allow" },
+      ])
+      expect(yield* service.ask(assertion({ action: "edit", resources: ["agents/test.md"] }))).toMatchObject({
+        effect: "allow",
+      })
+
+      yield* setRules([
+        { action: "read", resource: "*", effect: "allow" },
+        { action: "read", resource: "/project/secrets/**", effect: "deny" },
+      ])
+      expect(yield* service.ask(assertion({ action: "read", resources: ["src/index.ts"] }))).toMatchObject({
+        effect: "allow",
+      })
+      expect(
+        yield* service.ask(
+          assertion({ id: Permission.ID.create("per_secret"), action: "read", resources: ["secrets/key.txt"] }),
+        ),
+      ).toMatchObject({ effect: "deny" })
+    }),
+  )
+
+  it.effect("keeps shell rule matching on the raw command span", () =>
+    Effect.gen(function* () {
+      // Shell resources are raw command text by design; resolving them against the Location would
+      // invent path spellings no shell rule was written against.
+      yield* setup([
+        { action: "shell", resource: "*", effect: "allow" },
+        { action: "shell", resource: "/project/sh *", effect: "deny" },
+      ])
+      const service = yield* Permission.Service
+      expect(yield* service.ask(assertion({ action: "shell", resources: ["sh -c echo"] }))).toMatchObject({
+        effect: "allow",
+      })
+    }),
+  )
+
   it.effect("allows managed output reads without granting external directory access", () =>
     Effect.gen(function* () {
       yield* setup([
