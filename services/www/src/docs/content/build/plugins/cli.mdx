@@ -423,10 +423,11 @@ await context.ui.dialog.select({
 - Escape, `clear()`, or showing another dialog resolves `undefined`.
 - Do not bind `ctrl+n` or `ctrl+p`. The dialog reserves them for navigation, and its own bindings take precedence.
 
-Custom JSX dialogs can set their size and close themselves.
+Custom JSX dialogs can set their size and close themselves. Call `set()` only after
+`show()`: it applies to the dialog that is currently active, and options passed before
+`show()` are silently ignored.
 
 ```tsx
-context.ui.dialog.set({ size: "large", centered: true })
 context.ui.dialog.show(
   () => (
     <box>
@@ -435,8 +436,15 @@ context.ui.dialog.show(
   ),
   () => console.log("closed"),
 )
+context.ui.dialog.set({ size: "large", centered: true })
 context.ui.dialog.clear()
 ```
+
+- Size presets are fixed column widths — `medium` 60, `large` 88, `xlarge` 116 — not
+  fractions of the terminal. Pick the largest preset that fits the current width.
+- Dialogs are horizontally centered by default, without `set({ centered: true })`.
+- The host bounds only the dialog's width, never its height. Custom content that needs
+  scrolling must carry its own height bound derived from the terminal size.
 
 Toasts support title, message, variant, and duration.
 
