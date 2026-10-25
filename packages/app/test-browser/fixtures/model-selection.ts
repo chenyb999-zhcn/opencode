@@ -60,7 +60,9 @@ mock.module("@/runtime/server/client", () => ({ useServerSDK: () => active.sdk }
 
 mock.module("@/runtime/server/runtime", () => ({ useGlobal: () => ({ models: active.preferences }) }))
 
-mock.module("@/workspaces/location", () => ({ useWorkspaceLocation: () => () => ({ directory: active.directory }) }))
+mock.module("@/workspaces/location", () => ({
+  useWorkspaceLocation: () => () => ({ get directory() { return active.dir() } }),
+}))
 
 mock.module("@/settings/model", () => ({
   useSettings: () => ({ visibility: { customAgents: () => active.state.visible } }),
@@ -100,6 +102,7 @@ afterEach(() =>
 
 function fixture(input: { session?: Commit; agents?: Agent[]; config?: ConfigModel; preferred?: string } = {}) {
   const directory = `/selection-test/${crypto.randomUUID()}`
+  const [location, setLocation] = createStore({ directory })
 
   // SAFETY: fixture transitions clear the route as well as selecting session IDs.
   const [state, set] = createStore({
@@ -140,7 +143,13 @@ function fixture(input: { session?: Commit; agents?: Agent[]; config?: ConfigMod
 
   const result = {
     prompt: createMemoryComposerState(),
-    directory,
+    get directory() {
+      return location.directory
+    },
+    dir: () => location.directory,
+    setDirectory(next: string) {
+      setLocation("directory", next)
+    },
     state,
     set,
     setPreferences,
@@ -272,6 +281,25 @@ test("new-session drafts remember each agent's model and hand off inactive choic
   f.set("route", "id", "ses_a")
   local.agent.set("build")
   expect(local.model.current()?.id).toBe("c")
+})
+
+test("new-session draft agent picks are scoped per project directory", () => {
+  const f = fixture({ agents: [agent("build"), agent("agent-a"), agent("agent-b")] })
+  f.set("route", "id", undefined)
+  const { local } = f.mount()
+  const dirA = f.directory
+
+  local.agent.set("agent-a")
+  expect(local.agent.current()?.name).toBe("agent-a")
+
+  f.setDirectory("/selection-test/other-project")
+  expect(local.agent.current()?.name).toBe("build")
+
+  local.agent.set("agent-b")
+  expect(local.agent.current()?.name).toBe("agent-b")
+
+  f.setDirectory(dirA)
+  expect(local.agent.current()?.name).toBe("agent-a")
 })
 
 test("session model picks snapshot the variant rather than following another session's preferences", () => {

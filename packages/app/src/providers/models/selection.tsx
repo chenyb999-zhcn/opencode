@@ -107,13 +107,16 @@ export const { use: useLocal, provider: LocalProvider } = createSimpleContext({
       { session: {} },
     )
 
+    // A provider instance can stay mounted while the directory changes, so the in-memory
+    // new-chat state is keyed by directory: a pick in one project must not change another's.
     const [store, setStore] = createStore<{
-      current?: string
-      draft?: State
-      promoting?: State
+      current: Record<string, string | undefined>
+      draft: Record<string, State | undefined>
+      promoting: Record<string, State | undefined>
     }>({
-      current: list()[0]?.name,
-      draft: undefined,
+      current: {},
+      draft: {},
+      promoting: {},
     })
 
     const validModel = (model: ModelKey) => {
@@ -137,22 +140,23 @@ export const { use: useLocal, provider: LocalProvider } = createSimpleContext({
     }
 
     createEffect(() => {
+      const dir = sdk().directory
       const items = list()
 
       if (items.length === 0) {
-        if (store.current !== undefined) setStore("current", undefined)
+        if (store.current[dir] !== undefined) setStore("current", dir, undefined)
 
         return
       }
 
-      if (items.some((item) => item.name === store.current)) return
-      setStore("current", items[0]?.name)
+      if (items.some((item) => item.name === store.current[dir])) return
+      setStore("current", dir, items[0]?.name)
     })
 
     const scope = createMemo<State | undefined>(() => {
       const session = id()
 
-      if (!session) return store.draft ?? store.promoting
+      if (!session) return store.draft[sdk().directory] ?? store.promoting[sdk().directory]
 
       return saved.session[session] ?? handoff.get(handoffKey(serverSDK.scope, sdk().directory, session))
     })
@@ -162,21 +166,22 @@ export const { use: useLocal, provider: LocalProvider } = createSimpleContext({
 
       if (!session) return
 
-      const key = handoffKey(serverSDK.scope, sdk().directory, session)
+      const dir = sdk().directory
+      const key = handoffKey(serverSDK.scope, dir, session)
       const next = handoff.get(key)
 
       if (!next) return
 
       if (saved.session[session] !== undefined) {
         handoff.delete(key)
-        setStore("promoting", undefined)
+        setStore("promoting", dir, undefined)
 
         return
       }
 
       setSaved("session", session, clone(next))
       handoff.delete(key)
-      setStore("promoting", undefined)
+      setStore("promoting", dir, undefined)
     })
 
     const recentModel = () => {
@@ -208,13 +213,15 @@ export const { use: useLocal, provider: LocalProvider } = createSimpleContext({
       list,
       visible: agentsVisible,
       current() {
-        return pickAgent(scope()?.agent ?? durable()?.agent ?? (agentsVisible() ? store.current : "build"))
+        return pickAgent(
+          scope()?.agent ?? durable()?.agent ?? (agentsVisible() ? store.current[sdk().directory] : "build"),
+        )
       },
       set(name: string | undefined) {
         const item = pickAgent(name)
 
         if (!item) {
-          setStore("current", undefined)
+          setStore("current", sdk().directory, undefined)
 
           return
         }
@@ -229,7 +236,7 @@ export const { use: useLocal, provider: LocalProvider } = createSimpleContext({
 
           if (previous.agent) choices[previous.agent] = { model: previous.model, variant: previous.variant }
 
-          setStore("current", item.name)
+          setStore("current", sdk().directory, item.name)
 
           const next = {
             agent: item.name,
@@ -249,7 +256,7 @@ export const { use: useLocal, provider: LocalProvider } = createSimpleContext({
         const items = list()
 
         if (items.length === 0) {
-          setStore("current", undefined)
+          setStore("current", sdk().directory, undefined)
 
           return
         }
@@ -340,7 +347,7 @@ export const { use: useLocal, provider: LocalProvider } = createSimpleContext({
         return
       }
 
-      setStore("draft", state)
+      setStore("draft", sdk().directory, state)
     }
 
     const recent = createMemo(() => models.recent.list().filter(validModel).map(models.find).filter(Boolean))
@@ -487,7 +494,9 @@ export const { use: useLocal, provider: LocalProvider } = createSimpleContext({
       session: {
         ready: savedReady,
         reset() {
-          setStore({ draft: undefined, promoting: undefined })
+          const dir = sdk().directory
+          setStore("draft", dir, undefined)
+          setStore("promoting", dir, undefined)
         },
         promote(dir: string, session: string, state?: State) {
           const next = clone(state ?? snapshot())
@@ -515,8 +524,8 @@ export const { use: useLocal, provider: LocalProvider } = createSimpleContext({
             setSaved("session", session, committed)
           }
 
-          setStore("promoting", committed)
-          setStore("draft", undefined)
+          setStore("promoting", dir, committed)
+          setStore("draft", dir, undefined)
         },
         restore(msg: { sessionID: string; agent: string; model: ModelKey }) {
           const session = id()
