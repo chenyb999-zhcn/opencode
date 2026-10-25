@@ -32,11 +32,23 @@ export interface HttpPrepared<Frame> {
   readonly middleware?: HttpMiddleware
 }
 
+// OpenAI-compatible servers reject `tool_choice` when the body carries no tools — vLLM answers
+// "When using tool_choice, tools must be set" — and Anthropic rejects the pairing the same way.
+// Protocol lowering already guards this; a configured body overlay merges after lowering and can
+// re-introduce the orphaned key, so re-check the pair on the merged body.
+const dropOrphanToolChoice = (body: Record<string, unknown>) => {
+  if (!("tool_choice" in body)) return
+  const tools = body.tools
+  if (Array.isArray(tools) && tools.length > 0) return
+  delete body.tool_choice
+}
+
 const bodyWithOverlay = <Body>(body: Body, request: LLMRequest, encodeBody: (body: Body) => string) =>
   Effect.gen(function* () {
     if (request.http?.body === undefined) return { jsonBody: body, bodyText: encodeBody(body) }
     if (ProviderShared.isRecord(body)) {
       const overlaid = mergeJsonRecords(body, request.http.body) ?? {}
+      dropOrphanToolChoice(overlaid)
       return { jsonBody: overlaid, bodyText: ProviderShared.encodeJson(overlaid) }
     }
     return yield* ProviderShared.invalidRequest("http.body can only overlay JSON object request bodies")

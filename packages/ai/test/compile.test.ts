@@ -448,6 +448,56 @@ describe("request option precedence", () => {
     ),
   )
 
+  it.effect("drops an overlaid tool_choice when the request carries no tools", () =>
+    LLMClient.generate(
+      LLM.request({
+        model: OpenAIChat.route
+          .with({ endpoint: { baseURL: "https://api.openai.test/v1/" }, auth: Auth.bearer("test") })
+          .model({ id: "gpt-4o-mini" }),
+        prompt: "Say hello.",
+        http: { body: { tool_choice: "auto" } },
+      }),
+    ).pipe(
+      Effect.provide(
+        dynamicResponse((input) =>
+          Effect.gen(function* () {
+            const body = decodeJson(input.text) as Record<string, unknown>
+            expect("tool_choice" in body).toBe(false)
+            return input.respond(sseEvents(deltaChunk({}, "stop")), {
+              headers: { "content-type": "text/event-stream" },
+            })
+          }),
+        ),
+      ),
+    ),
+  )
+
+  it.effect("keeps an overlaid tool_choice when the request carries tools", () =>
+    LLMClient.generate(
+      LLM.request({
+        model: OpenAIChat.route
+          .with({ endpoint: { baseURL: "https://api.openai.test/v1/" }, auth: Auth.bearer("test") })
+          .model({ id: "gpt-4o-mini" }),
+        prompt: "Say hello.",
+        tools: [ToolDefinition.make({ name: "lookup", description: "look up", inputSchema: {} })],
+        http: { body: { tool_choice: "auto" } },
+      }),
+    ).pipe(
+      Effect.provide(
+        dynamicResponse((input) =>
+          Effect.gen(function* () {
+            const body = decodeJson(input.text) as Record<string, unknown>
+            expect(body.tool_choice).toBe("auto")
+            expect(Array.isArray(body.tools) && (body.tools as unknown[]).length).toBe(1)
+            return input.respond(sseEvents(deltaChunk({}, "stop")), {
+              headers: { "content-type": "text/event-stream" },
+            })
+          }),
+        ),
+      ),
+    ),
+  )
+
   it.effect("uses the Anthropic default before call maxTokens", () =>
     Effect.gen(function* () {
       const route = AnthropicMessages.route.with({
