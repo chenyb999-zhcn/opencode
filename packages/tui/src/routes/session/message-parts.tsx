@@ -102,7 +102,7 @@ export function ReasoningPart(props: {
               <code
                 filetype="markdown"
                 drawUnstyledText={false}
-                streaming={true}
+                streaming={!isDone()}
                 syntaxStyle={thinkingSyntax()}
                 content={content()}
                 conceal={ctx.markdownMode() === "rendered"}
