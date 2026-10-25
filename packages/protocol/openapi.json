@@ -14785,6 +14785,15 @@
               "buffer": {
                 "type": "integer",
                 "minimum": 0
+              },
+              "precompute_ratio": {
+                "type": "number",
+                "exclusiveMinimum": 0,
+                "maximum": 1
+              },
+              "precompute_min_tokens": {
+                "type": "integer",
+                "minimum": 0
               }
             },
             "additionalProperties": false

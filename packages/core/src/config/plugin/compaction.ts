@@ -20,6 +20,12 @@ export const Plugin = define({
           ...(entry.info.compaction.auto === undefined ? {} : { auto: entry.info.compaction.auto }),
           ...(entry.info.compaction.buffer === undefined ? {} : { buffer: entry.info.compaction.buffer }),
           ...(entry.info.compaction.keep?.tokens === undefined ? {} : { keep: entry.info.compaction.keep.tokens }),
+          ...(entry.info.compaction.precompute_ratio === undefined
+            ? {}
+            : { precomputeRatio: entry.info.compaction.precompute_ratio }),
+          ...(entry.info.compaction.precompute_min_tokens === undefined
+            ? {}
+            : { precomputeMinTokens: entry.info.compaction.precompute_min_tokens }),
         })
       }
     })

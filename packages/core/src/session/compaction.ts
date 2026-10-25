@@ -46,6 +46,10 @@ export type Settings = {
   keep: number
   /** Summarize in the background as the context nears the threshold, so automatic compaction can swap it in. */
   precompute: boolean
+  /** Share of the compaction ceiling at which a background summary starts. Unset keeps 85%. */
+  precomputeRatio?: number
+  /** Measured prompt tokens below which a background summary is not worth its cost. Unset keeps 64k. */
+  precomputeMinTokens?: number
 }
 
 export type Editor = {
@@ -143,9 +147,9 @@ const TRANSCRIPT_LEVELS = [0, OUTPUTS_CLIPPED, OUTPUTS_REMOVED, USER_ONLY, OMITT
 const TRANSCRIPT_CLIP = 2_000
 const IMAGE_TOKEN_ESTIMATE = 1_500
 const PDF_TOKEN_ESTIMATE = 2_000
-/** Share of the compaction ceiling at which a background summary starts. */
+/** Default share of the compaction ceiling at which a background summary starts; `compaction.precompute_ratio` overrides. */
 const PRECOMPUTE_RATIO = 0.85
-/** Measured prompt tokens below which a background summary is not worth its cost. */
+/** Default measured prompt tokens below which a background summary is not worth its cost; `compaction.precompute_min_tokens` overrides. */
 const PRECOMPUTE_MIN_TOKENS = 64_000
 /**
  * The most text a swapped-in summary keeps verbatim beside it: twice `keep`, at least 30k, at most a quarter of the
@@ -334,12 +338,16 @@ export const layer = Layer.effect(
       if (context.model.compaction?.type === "native") return
       const ceiling = calculateCeiling(context.model.limit, settings.buffer)
       if (!Number.isFinite(ceiling) || due(context, ceiling)) return
-      if (estimateContext(context) < ceiling * PRECOMPUTE_RATIO) return
+      if (estimateContext(context) < ceiling * (settings.precomputeRatio ?? PRECOMPUTE_RATIO)) return
 
       const anchorIndex = context.messages.findLastIndex((message) => hasMeasuredPrompt(message, context.model.ref))
       const anchor = context.messages[anchorIndex]
       if (anchorIndex <= 0 || anchor?.type !== "assistant" || !anchor.tokens) return
-      if (anchor.tokens.input + anchor.tokens.cache.read + anchor.tokens.cache.write < PRECOMPUTE_MIN_TOKENS) return
+      if (
+        anchor.tokens.input + anchor.tokens.cache.read + anchor.tokens.cache.write <
+        (settings.precomputeMinTokens ?? PRECOMPUTE_MIN_TOKENS)
+      )
+        return
 
       const sessionID = context.session.id
       const existing = precomputed.get(sessionID)

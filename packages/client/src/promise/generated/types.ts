@@ -2290,7 +2290,13 @@ export type ConfigEntry =
                 }
           }
         }
-        compaction?: { auto?: boolean; keep?: { tokens?: number }; buffer?: number }
+        compaction?: {
+          auto?: boolean
+          keep?: { tokens?: number }
+          buffer?: number
+          precompute_ratio?: number
+          precompute_min_tokens?: number
+        }
         skills?: Array<string>
         commands?: {
           [x: string]: {

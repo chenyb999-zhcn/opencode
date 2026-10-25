@@ -921,6 +921,51 @@ it.effect("background summaries stay off unless enabled", () =>
   }),
 )
 
+it.effect("a configured precompute floor can hold a background summary back near the threshold", () =>
+  Effect.gen(function* () {
+    requests = []
+    const compaction = yield* enablePrecompute
+    yield* compaction.transform((editor) => editor.configure({ precomputeMinTokens: 170_000 }))
+    const session = yield* insertSession(Session.ID.make("ses_precompute_floor"))
+    const history = precomputeHistory()
+
+    // The latest measured prompt is 156k, below the configured floor, so no background summary starts.
+    yield* compaction.precompute(Effect.succeed(loaded(session, history.near)))
+    expect(yield* compaction.compact({ reason: "auto", context: loaded(session, history.due) })).toEqual({
+      status: "completed",
+    })
+    expect(requests).toHaveLength(1)
+    expect(JSON.stringify(requests[0].messages)).toContain("Third answer")
+  }),
+)
+
+it.effect("configured precompute ratio and floor make background summaries reachable", () =>
+  Effect.gen(function* () {
+    requests = []
+    const compaction = yield* SessionCompaction.Service
+    yield* compaction.transform((editor) =>
+      editor.configure({ precompute: true, precomputeRatio: 0.1, precomputeMinTokens: 10_000 }),
+    )
+    const session = yield* insertSession(Session.ID.make("ses_precompute_custom"))
+
+    // A 30k measured prompt reaches neither the default 85% ratio (144.5k) nor the 64k floor;
+    // the configured values let the background summary start, and compaction joins it.
+    const near = [textUser("First question"), measured("First answer", 30_000)]
+    yield* compaction.precompute(Effect.succeed(loaded(session, near)))
+    expect(
+      yield* compaction.compact({
+        reason: "auto",
+        context: loaded(session, [...near, textUser("Second question"), measured("Second answer", 182_000)]),
+      }),
+    ).toEqual({ status: "completed" })
+
+    // The one request is the background summary of the prefix before the latest response, not a second one.
+    expect(requests).toHaveLength(1)
+    expect(JSON.stringify(requests[0].messages)).toContain("First question")
+    expect(JSON.stringify(requests[0].messages)).not.toContain("Second answer")
+  }),
+)
+
 it.effect("automatic compaction swaps in the background summary without another model call", () =>
   Effect.gen(function* () {
     requests = []
