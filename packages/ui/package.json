@@ -55,6 +55,7 @@
     "./menu": "./src/navigation/menu/menu.tsx",
     "./progress-circle": "./src/feedback/progress-circle/progress-circle.tsx",
     "./project-avatar": "./src/data-display/project-avatar/project-avatar.tsx",
+    "./project-avatar-core": "./src/data-display/project-avatar/project-avatar-core.ts",
     "./radio": "./src/forms/radio/radio.tsx",
     "./segmented-control": "./src/navigation/segmented-control/segmented-control.tsx",
     "./select": "./src/forms/select/select.tsx",

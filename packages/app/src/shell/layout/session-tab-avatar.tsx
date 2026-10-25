@@ -8,6 +8,7 @@ import {
   ProjectAvatar,
 } from "@opencode/ui/project-avatar"
 import { SessionProgressIndicatorV2 } from "@opencode/session-ui/v2/session-progress-indicator-v2"
+import { projectProgressTint } from "./project-progress-tint"
 import { Show } from "solid-js"
 
 export function SessionTabAvatar(props: {
@@ -50,7 +51,7 @@ export function SessionTabAvatarView(props: {
         />
       }
     >
-      <SessionProgressIndicatorV2 />
+      <SessionProgressIndicatorV2 style={{ color: projectProgressTint(props.project) }} />
     </Show>
   )
 }
